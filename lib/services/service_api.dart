@@ -8,7 +8,7 @@ import '../models/service_model.dart';
 
 class ServiceApi {
 
-  static const String baseUrl = "http://192.168.1.41:8080/api/services";
+  static const String baseUrl = "https://nextup-backend-production-42bf.up.railway.app/api/services";
 
   static Future<List<ServiceModel>> getServices(int providerId) async {
     final response =
@@ -34,6 +34,16 @@ class ServiceApi {
       return ServiceModel.fromJson(jsonDecode(response.body));
     } else {
       throw Exception("Failed to create service");
+    }
+  }
+
+  static Future<void> deleteService(int serviceId) async {
+    final response = await http.delete(
+      Uri.parse("$baseUrl/$serviceId"),
+    );
+
+    if (response.statusCode != 200 && response.statusCode != 204) {
+      throw Exception("Failed to delete service");
     }
   }
 }

@@ -3,36 +3,78 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:nextup/screens/scan_qr_screen.dart';
 import 'package:nextup/services/notifications_store.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'help_page.dart';
 import 'account_page.dart';
 import 'package:nextup/screens/dashboard/my_tokens_page.dart';
+
 class UserDashboard extends StatefulWidget {
   final int userId;
   final String userName;
   const UserDashboard({
     super.key,
     required this.userId,
-    required this.userName});
+    required this.userName,
+  });
 
   @override
   State<UserDashboard> createState() => _UserDashboardState();
 }
+
 class _UserDashboardState extends State<UserDashboard> {
   int _currentIndex = 0;
-  // ── Back button exit confirmation ────────────────────────────────────────
+  String _displayName = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _displayName = widget.userName;
+    _fetchUserName();
+  }
+
+  Future<void> _fetchUserName() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('token');
+      if (token == null) return;
+
+      final response = await http.get(
+        Uri.parse("https://nextup-backend-production-42bf.up.railway.app/api/user/profile"),
+        headers: {"Authorization": "Bearer $token"},
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        final name = (data['name'] ?? '').toString().trim().split(' ').first;
+        if (name.isNotEmpty) {
+          if (mounted) setState(() => _displayName = name);
+        }
+      }
+    } catch (_) {}
+  }
+
   Future<bool> _onBackPressed() async {
     return await showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text("Exit App"),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text("Exit App",
+            style: TextStyle(fontWeight: FontWeight.w700)),
         content: const Text("Do you want to exit the application?"),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
-            child: const Text("No"),
+            child: const Text("No",
+                style: TextStyle(color: Color(0xFF6B7280))),
           ),
-          TextButton(
+          ElevatedButton(
             onPressed: () => Navigator.of(context).pop(true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF4F46E5),
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10)),
+            ),
             child: const Text("Yes"),
           ),
         ],
@@ -41,22 +83,12 @@ class _UserDashboardState extends State<UserDashboard> {
         false;
   }
 
-  // ✅ FIX: Removed unused `late String firstName` that was never initialized.
-  // widget.userName is used directly everywhere now.
-
-  @override
-  void initState() {
-    super.initState();
-  }
-
   @override
   Widget build(BuildContext context) {
     return WillPopScope(
       onWillPop: _onBackPressed,
       child: Scaffold(
-        backgroundColor: const Color(0xFFF4F6FA),
-
-        // ── App bar ───────────────────────────────────────────────────────
+        backgroundColor: const Color(0xFFF6F7FB),
         appBar: AppBar(
           automaticallyImplyLeading: false,
           elevation: 0,
@@ -65,13 +97,14 @@ class _UserDashboardState extends State<UserDashboard> {
           title: const Text(
             "NextUp",
             style: TextStyle(
-              fontWeight: FontWeight.w600,
-              color: Colors.indigo,
+              fontWeight: FontWeight.w700,
+              color: Color(0xFF3730A3),
+              fontSize: 20,
             ),
           ),
           actions: [
             IconButton(
-              icon: const Icon(Icons.help_outline, color: Colors.indigo),
+              icon: const Icon(Icons.help_outline, color: Color(0xFF3730A3)),
               tooltip: "Help",
               onPressed: () {
                 Navigator.push(
@@ -82,11 +115,7 @@ class _UserDashboardState extends State<UserDashboard> {
             ),
           ],
         ),
-
-        // ── Body ──────────────────────────────────────────────────────────
         body: _buildBody(),
-
-        // ── Bottom navigation ─────────────────────────────────────────────
         bottomNavigationBar: Container(
           decoration: const BoxDecoration(
             color: Colors.white,
@@ -99,7 +128,7 @@ class _UserDashboardState extends State<UserDashboard> {
             type: BottomNavigationBarType.fixed,
             backgroundColor: Colors.white,
             elevation: 0,
-            selectedItemColor: Colors.indigo,
+            selectedItemColor: const Color(0xFF4F46E5),
             unselectedItemColor: Colors.grey,
             selectedLabelStyle: const TextStyle(
               fontWeight: FontWeight.w600,
@@ -112,30 +141,10 @@ class _UserDashboardState extends State<UserDashboard> {
             ),
             onTap: (index) => setState(() => _currentIndex = index),
             items: [
-              _navItem(
-                icon: Icons.home_outlined,
-                activeIcon: Icons.home,
-                label: "Home",
-                index: 0,
-              ),
-              _navItem(
-                icon: Icons.confirmation_number_outlined,
-                activeIcon: Icons.confirmation_number,
-                label: "Tokens",
-                index: 1,
-              ),
-              _navItem(
-                icon: Icons.notifications_outlined,
-                activeIcon: Icons.notifications,
-                label: "Alerts",
-                index: 2,
-              ),
-              _navItem(
-                icon: Icons.person_outline,
-                activeIcon: Icons.person,
-                label: "Account",
-                index: 3,
-              ),
+              _navItem(icon: Icons.home_outlined, activeIcon: Icons.home, label: "Home", index: 0),
+              _navItem(icon: Icons.confirmation_number_outlined, activeIcon: Icons.confirmation_number, label: "Tokens", index: 1),
+              _navItem(icon: Icons.notifications_outlined, activeIcon: Icons.notifications, label: "Alerts", index: 2),
+              _navItem(icon: Icons.person_outline, activeIcon: Icons.person, label: "Account", index: 3),
             ],
           ),
         ),
@@ -171,105 +180,16 @@ class _UserDashboardState extends State<UserDashboard> {
     );
   }
 
-  // ── Tab switcher ─────────────────────────────────────────────────────────
   Widget _buildBody() {
     switch (_currentIndex) {
       case 0:
         return _homeTab();
-
       case 1:
         return MyTokensPage(userId: widget.userId);
-
       case 2:
-        final notifications = NotificationStore.notifications;
-        if (notifications.isEmpty) {
-          return _emptyState(
-            icon: Icons.notifications,
-            title: "No Notifications",
-            subtitle: "Queue updates will be shown here",
-          );
-        }
-        return ListView.builder(
-          padding: const EdgeInsets.all(16),
-          itemCount: notifications.length,
-          itemBuilder: (context, index) {
-            final notification = notifications[index];
-            return Container(
-              margin: const EdgeInsets.only(bottom: 12),
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(14),
-                boxShadow: const [
-                  BoxShadow(
-                    color: Colors.black12,
-                    blurRadius: 6,
-                    offset: Offset(0, 3),
-                  ),
-                ],
-              ),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: Colors.blue.withOpacity(0.1),
-                      shape: BoxShape.circle,
-                    ),
-                    child: const Icon(
-                      Icons.notifications_active,
-                      color: Colors.blue,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          notification.serviceName,
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 15,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          notification.title,
-                          style: const TextStyle(
-                            fontSize: 14,
-                            color: Colors.black87,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          notification.message,
-                          style: TextStyle(
-                            color: Colors.grey[600],
-                            fontSize: 13,
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        Text(
-                          "${notification.time.hour}:${notification.time.minute}",
-                          style: const TextStyle(
-                            fontSize: 12,
-                            color: Colors.grey,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            );
-          },
-        );
-
+        return _alertsTab();
       case 3:
         return _accountTab();
-
       default:
         return _homeTab();
     }
@@ -281,20 +201,12 @@ class _UserDashboardState extends State<UserDashboard> {
       child: ListView(
         padding: const EdgeInsets.all(20),
         children: [
-
-          // ✅ FIX: Pass widget.userName directly (guaranteed non-null from widget)
-          WelcomeCard(firstName: widget.userName),
-
+          WelcomeCard(firstName: _displayName),
           const SizedBox(height: 36),
-
-          // Section heading — pill tag
           Column(
             children: [
               Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 14,
-                  vertical: 5,
-                ),
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
                 decoration: BoxDecoration(
                   color: const Color(0x144F46E5),
                   borderRadius: BorderRadius.circular(100),
@@ -322,10 +234,7 @@ class _UserDashboardState extends State<UserDashboard> {
               ),
             ],
           ),
-
           const SizedBox(height: 32),
-
-          // Ghost shimmer button
           Center(
             child: _GhostShimmerButton(
               label: "Scan QR & Join",
@@ -340,6 +249,237 @@ class _UserDashboardState extends State<UserDashboard> {
             ),
           ),
           const SizedBox(height: 20),
+        ],
+      ),
+    );
+  }
+
+  // ── Alerts tab ───────────────────────────────────────────────────────────
+  Widget _alertsTab() {
+    final notifications = NotificationStore.notifications;
+
+    return Column(
+      children: [
+        // Header
+        Container(
+          width: double.infinity,
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              colors: [Color(0xFF3730A3), Color(0xFF6366F1)],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            borderRadius: BorderRadius.only(
+              bottomLeft: Radius.circular(32),
+              bottomRight: Radius.circular(32),
+            ),
+          ),
+          child: SafeArea(
+            bottom: false,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(24, 16, 24, 28),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    "Alerts",
+                    style: TextStyle(
+                      fontSize: 22,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.white,
+                      letterSpacing: -0.3,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    notifications.isEmpty
+                        ? "No notifications yet"
+                        : "${notifications.length} notification${notifications.length > 1 ? 's' : ''}",
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: Colors.white.withOpacity(0.7),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+
+        // Body
+        Expanded(
+          child: notifications.isEmpty
+              ? _alertsEmptyState()
+              : ListView.builder(
+            padding: const EdgeInsets.fromLTRB(20, 24, 20, 24),
+            itemCount: notifications.length,
+            itemBuilder: (context, index) {
+              final notification = notifications[index];
+              final bool isNext =
+              notification.title.toLowerCase().contains("next");
+
+              return Container(
+                margin: const EdgeInsets.only(bottom: 14),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(18),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.04),
+                      blurRadius: 16,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  children: [
+                    // Color top bar
+                    Container(
+                      height: 3,
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: isNext
+                              ? [const Color(0xFF16A34A), const Color(0xFF4ADE80)]
+                              : [const Color(0xFF4F46E5), const Color(0xFF818CF8)],
+                        ),
+                        borderRadius: const BorderRadius.only(
+                          topLeft: Radius.circular(18),
+                          topRight: Radius.circular(18),
+                        ),
+                      ),
+                    ),
+
+                    Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // Icon
+                          Container(
+                            width: 42,
+                            height: 42,
+                            decoration: BoxDecoration(
+                              color: isNext
+                                  ? const Color(0xFFDCFCE7)
+                                  : const Color(0xFFEEF2FF),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Icon(
+                              isNext
+                                  ? Icons.notifications_active_rounded
+                                  : Icons.notifications_rounded,
+                              size: 20,
+                              color: isNext
+                                  ? const Color(0xFF16A34A)
+                                  : const Color(0xFF4F46E5),
+                            ),
+                          ),
+                          const SizedBox(width: 14),
+
+                          // Content
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                // Service name + time row
+                                Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Expanded(
+                                      child: Text(
+                                        notification.serviceName,
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.w700,
+                                          fontSize: 14,
+                                          color: Color(0xFF111827),
+                                        ),
+                                      ),
+                                    ),
+                                    Text(
+                                      "${notification.time.hour}:${notification.time.minute.toString().padLeft(2, '0')}",
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: Colors.grey.shade400,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 4),
+
+                                // Title
+                                Text(
+                                  notification.title,
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600,
+                                    color: isNext
+                                        ? const Color(0xFF16A34A)
+                                        : const Color(0xFF4F46E5),
+                                  ),
+                                ),
+                                const SizedBox(height: 3),
+
+                                // Message
+                                Text(
+                                  notification.message,
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    color: Colors.grey.shade600,
+                                    height: 1.4,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _alertsEmptyState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Container(
+            width: 80,
+            height: 80,
+            decoration: BoxDecoration(
+              color: const Color(0xFFEEF2FF),
+              borderRadius: BorderRadius.circular(24),
+            ),
+            child: const Icon(
+              Icons.notifications_outlined,
+              size: 36,
+              color: Color(0xFF6366F1),
+            ),
+          ),
+          const SizedBox(height: 16),
+          const Text(
+            "No Notifications",
+            style: TextStyle(
+              fontSize: 17,
+              fontWeight: FontWeight.w700,
+              color: Color(0xFF111827),
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            "Queue updates will be shown here",
+            style: TextStyle(
+              fontSize: 13,
+              color: Colors.grey.shade500,
+            ),
+          ),
         ],
       ),
     );
@@ -388,32 +528,23 @@ class _UserDashboardState extends State<UserDashboard> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      title,
-                      style: const TextStyle(
-                        fontSize: 15.5,
-                        fontWeight: FontWeight.w600,
-                        letterSpacing: 0.2,
-                      ),
-                    ),
+                    Text(title,
+                        style: const TextStyle(
+                            fontSize: 15.5,
+                            fontWeight: FontWeight.w600,
+                            letterSpacing: 0.2)),
                     const SizedBox(height: 6),
-                    Text(
-                      subtitle,
-                      style: TextStyle(
-                        color: Colors.grey.shade600,
-                        fontSize: 13,
-                        height: 1.3,
-                      ),
-                    ),
+                    Text(subtitle,
+                        style: TextStyle(
+                            color: Colors.grey.shade600,
+                            fontSize: 13,
+                            height: 1.3)),
                   ],
                 ),
               ),
               const SizedBox(width: 8),
-              Icon(
-                Icons.chevron_right_rounded,
-                color: Colors.grey.shade400,
-                size: 20,
-              ),
+              Icon(Icons.chevron_right_rounded,
+                  color: Colors.grey.shade400, size: 20),
             ],
           ),
         ),
@@ -421,9 +552,8 @@ class _UserDashboardState extends State<UserDashboard> {
     );
   }
 
-  // ✅ FIX: Pass actual widget.userName to AccountPage instead of empty string
   Widget _accountTab() {
-    return AccountPage(firstName: widget.userName, email: "", mobile: "");
+    return AccountPage(firstName: _displayName, email: "", mobile: "");
   }
 
   Widget _emptyState({
@@ -437,19 +567,13 @@ class _UserDashboardState extends State<UserDashboard> {
         children: [
           Icon(icon, size: 60, color: Colors.grey),
           const SizedBox(height: 12),
-          Text(
-            title,
-            style: const TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
+          Text(title,
+              style: const TextStyle(
+                  fontSize: 18, fontWeight: FontWeight.w600)),
           const SizedBox(height: 6),
-          Text(
-            subtitle,
-            style: const TextStyle(color: Colors.black54),
-            textAlign: TextAlign.center,
-          ),
+          Text(subtitle,
+              style: const TextStyle(color: Colors.black54),
+              textAlign: TextAlign.center),
         ],
       ),
     );
@@ -471,7 +595,6 @@ class WelcomeCard extends StatelessWidget {
     return "Good evening";
   }
 
-  // ✅ FIX: Sanitize the name — treat "null", empty, or whitespace-only as Guest
   String get _displayName {
     final trimmed = firstName.trim();
     if (trimmed.isEmpty || trimmed.toLowerCase() == 'null') return "Guest";
@@ -494,16 +617,12 @@ class WelcomeCard extends StatelessWidget {
       clipBehavior: Clip.antiAlias,
       child: Stack(
         children: [
-          // Decorative orbs
           Positioned(top: -55, right: -55, child: _Orb(180, 0.06)),
           Positioned(bottom: -30, right: 30, child: _Orb(90, 0.04)),
           Positioned(top: 24, right: 88, child: _Orb(50, 0.035)),
-
-          // Content
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Greeting
               Text(
                 _greeting.toUpperCase(),
                 style: const TextStyle(
@@ -513,10 +632,7 @@ class WelcomeCard extends StatelessWidget {
                   letterSpacing: 1.4,
                 ),
               ),
-
               const SizedBox(height: 6),
-
-              // ✅ FIX: Use _displayName getter instead of raw firstName
               Text(
                 _displayName,
                 style: const TextStyle(
@@ -527,15 +643,9 @@ class WelcomeCard extends StatelessWidget {
                   height: 1.15,
                 ),
               ),
-
               const SizedBox(height: 20),
-
-              // Hairline divider
               Container(height: 0.5, color: const Color(0x24FFFFFF)),
-
               const SizedBox(height: 18),
-
-              // Tagline
               Text.rich(
                 TextSpan(
                   style: const TextStyle(
@@ -657,11 +767,8 @@ class _GhostShimmerButtonState extends State<_GhostShimmerButton>
           clipBehavior: Clip.antiAlias,
           child: Stack(
             children: [
-              // Top edge highlight
               Positioned(
-                top: 0,
-                left: 0,
-                right: 0,
+                top: 0, left: 0, right: 0,
                 child: Container(
                   height: 1,
                   decoration: const BoxDecoration(
@@ -675,8 +782,6 @@ class _GhostShimmerButtonState extends State<_GhostShimmerButton>
                   ),
                 ),
               ),
-
-              // Label + icon
               Center(
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
@@ -695,8 +800,6 @@ class _GhostShimmerButtonState extends State<_GhostShimmerButton>
                   ],
                 ),
               ),
-
-              // Shimmer sweep
               Positioned.fill(
                 child: AnimatedBuilder(
                   animation: _shimmer,
@@ -803,6 +906,7 @@ class _QrPainter extends CustomPainter {
       }
     }
   }
+
   @override
   bool shouldRepaint(_QrPainter old) => old.color != color;
 }

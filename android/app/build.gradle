@@ -1,16 +1,18 @@
-plugins {
+plugins
+        {
     id 'com.android.application'
     id 'dev.flutter.flutter-gradle-plugin'
     id 'com.google.gms.google-services'
 }
 
 android {
+
     namespace "com.nextup"
-    compileSdk = flutter.compileSdkVersion
+    compileSdk = 34
 
     defaultConfig {
         applicationId "com.nextup"
-        minSdk = flutter.minSdkVersion
+        minSdkVersion = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
@@ -24,7 +26,9 @@ android {
 
     buildTypes {
         release {
-            signingConfig = signingConfigs.debug
+            signingConfig signingConfigs.debug
+            minifyEnabled false
+            shrinkResources false
         }
     }
 }

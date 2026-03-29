@@ -12,6 +12,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 class ScanQRScreen extends StatefulWidget {
   final int userId;
 
@@ -27,7 +28,7 @@ class _ScanQRScreenState extends State<ScanQRScreen> {
 
   final MobileScannerController _controller = MobileScannerController();
 
-  final String baseUrl = "http://192.168.1.41:8080";
+  final String baseUrl = "https://nextup-backend-production-42bf.up.railway.app";
 
   Future<void> _joinQueue(String scannedValue) async {
     if (_isProcessing) return;
@@ -46,8 +47,9 @@ class _ScanQRScreenState extends State<ScanQRScreen> {
     _controller.stop();
 
     try {
+      // ✅ Correct endpoint
       final response = await http.post(
-        Uri.parse("$baseUrl/api/token/join"),
+        Uri.parse("$baseUrl/api/queue/join"),
         headers: {"Content-Type": "application/json"},
         body: jsonEncode({
           "userId": widget.userId,
@@ -62,14 +64,21 @@ class _ScanQRScreenState extends State<ScanQRScreen> {
 
         print("API RESPONSE: $data");
 
+        // ✅ ADD THIS — save avgWaitTime before navigating
+        final prefs = await SharedPreferences.getInstance();
+        final avgWait = (data["averageWaitingTimeMinutes"] as num?)?.toInt() ?? 0;
+        await prefs.setInt('avgWaitTime', avgWait);
+        debugPrint("💾 Saved avgWaitTime: $avgWait");
+
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(
             builder: (_) => QueueStatusScreen(
+              serviceId: serviceId,
               serviceName: data["serviceName"] ?? "Service",
               tokenNumber: int.tryParse("${data["tokenNumber"]}") ?? 0,
               position: int.tryParse("${data["position"]}") ?? 0,
-              estimatedTime: int.tryParse("${data["averageWaitingTimeMinutes"]}") ?? 0,
+              estimatedTime: avgWait, // ✅ reuse avgWait directly
               status: data["status"] ?? "WAITING",
               queueEntryId: int.tryParse("${data["queueEntryId"]}") ?? 0,
               userId: int.tryParse("${data["userId"]}") ?? 0,

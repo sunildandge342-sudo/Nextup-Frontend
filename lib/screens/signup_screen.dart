@@ -6,7 +6,6 @@ import 'login_screen.dart';
 import 'package:nextup/services/facebook_auth_service.dart';
 import 'package:nextup/services/google_auth_service.dart';
 import 'package:nextup/services/api_services.dart';
-
 import 'package:nextup/screens/dashboard/dashboard_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -30,7 +29,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
   bool _isServiceProvider = false;
 
 
-  final String baseUrl = "http://192.168.1.41:8080/api/auth/signup";
+  final String baseUrl = "https://nextup-backend-production-42bf.up.railway.app/api/auth/signup";
 
   bool _isValidEmail(String email) {
     final emailRegex = RegExp(
@@ -132,7 +131,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
 
     setState(() => _isLoading = true);
 
-    final url = Uri.parse("http://192.168.1.41:8080/auth/signup");
+    final url = Uri.parse("https://nextup-backend-production-42bf.up.railway.app/auth/signup");
 
     final headers = {
       'Content-Type': 'application/json',
@@ -420,7 +419,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
                                         ),
                                         child: Center(
                                           child: Text(
-                                            isOtpVerified ? 'Verified ✓' : 'Verify OTP',
+                                            isOtpVerified ? 'Verified' : 'Verify OTP',
                                             style: const TextStyle(
                                               fontSize: 15.5,
                                               fontWeight: FontWeight.w600,
@@ -580,72 +579,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
                                 ),
                                 const SizedBox(height: 24),
 
-                                const Text(
-                                  "Or sign up with",
-                                  style: TextStyle(
-                                    fontSize: 14,
-                                    color: Color(0xFF6B7280),
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                ),
 
-                                const SizedBox(height: 14),
-
-                                Row(
-                                  children: [
-                                    Expanded(
-                                      child: _socialButton(
-                                        asset: 'assets/icons/google.png',
-                                        label: 'Google',
-                                        onTap: () async {
-                                          final token = await GoogleAuthService.signIn();
-
-                                          if (token == null) {
-                                            ScaffoldMessenger.of(context).showSnackBar(
-                                              const SnackBar(content: Text("...")),
-                                            );
-                                            return;
-                                          }
-
-                                          final data = await ApiService.socialLogin("GOOGLE", token);
-
-                                          if (data == null) {
-                                            ScaffoldMessenger.of(context).showSnackBar(
-                                              const SnackBar(content: Text("Social login failed")),
-                                            );
-                                            return;
-                                          }
-
-                                          final prefs = await SharedPreferences.getInstance();
-                                          await prefs.setString('token', data['token']);
-
-                                          final role = data['role'].toString().toUpperCase();
-                                          final userId = int.tryParse(data['userId'].toString()) ?? 0;
-                                          final name = data['name'].toString();
-
-                                          if (role == 'SERVICE_PROVIDER') {
-                                            Navigator.pushReplacement(
-                                              context,
-                                              MaterialPageRoute(
-                                                builder: (_) => ServiceProviderHomePage(providerId: userId),
-                                              ),
-                                            );
-                                          } else {
-                                            Navigator.pushReplacement(
-                                              context,
-                                              MaterialPageRoute(
-                                                builder: (_) => UserDashboard(
-                                                  userId: userId,
-                                                  userName: name,
-                                                ),
-                                              ),
-                                            );
-                                          }
-                                        },
-                                      ),
-                                    ),
-                                  ],
-                                ),
                               ],
                             ),
                           ),

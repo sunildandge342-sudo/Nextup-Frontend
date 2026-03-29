@@ -39,17 +39,22 @@ class _LoginScreenState extends State<LoginScreen> {
 
       if (res["success"] == true && res["data"] != null) {
         final data = res["data"];
-
+        final prefs = await SharedPreferences.getInstance();
+        print("🔍 LOGIN DATA: $data");
+        // ✅ Save token
         if (data["token"] != null) {
-          final prefs = await SharedPreferences.getInstance();
           await prefs.setString('token', data["token"]);
         }
 
-        final role = data["role"].toString().toUpperCase();
+        // ✅ Save userId
         final int userId = data["userId"] as int;
+        await prefs.setInt('userId', userId);
 
-        // ✅ Read name saved during signup from SharedPreferences
-        final prefs = await SharedPreferences.getInstance();
+        // ✅ Save role
+        final role = data["role"].toString().toUpperCase();
+        await prefs.setString('role', role);
+
+        // ✅ Save name
         final String name = prefs.getString('userName') ?? '';
 
         print("FINAL USER ID USED: $userId");
@@ -89,7 +94,6 @@ class _LoginScreenState extends State<LoginScreen> {
       backgroundColor: const Color(0xFFF4F7FF),
       body: Stack(
         children: [
-          // 🔵 Decorative Circle (Top Left)
           Positioned(
             top: -80,
             left: -80,
@@ -153,27 +157,13 @@ class _LoginScreenState extends State<LoginScreen> {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Row(
-                          children: [
-                            Checkbox(
-                              value: rememberMe,
-                              activeColor: const Color(0xFF4A6CF7),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(4),
-                              ),
-                              onChanged: (v) =>
-                                  setState(() => rememberMe = v ?? false),
-                            ),
-                            const Text("Remember me"),
-                          ],
-                        ),
+                        Row(children: []),
                         TextButton(
                           onPressed: () {
                             Navigator.push(
                               context,
                               MaterialPageRoute(
-                                builder: (_) =>
-                                const ForgotPasswordEmailScreen(),
+                                builder: (_) => const ForgotPasswordEmailScreen(),
                               ),
                             );
                           },
@@ -272,12 +262,9 @@ class _LoginScreenState extends State<LoginScreen> {
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(16),
-          borderSide:
-          const BorderSide(color: Color(0xFF4A6CF7), width: 1.5),
+          borderSide: const BorderSide(color: Color(0xFF4A6CF7), width: 1.5),
         ),
       ),
     );
   }
 }
-
-

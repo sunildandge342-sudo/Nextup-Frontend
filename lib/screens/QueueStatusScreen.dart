@@ -1,19 +1,24 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:http/http.dart' as http;
 import 'dart:async';
+import 'package:nextup/services/background_service.dart';
 import 'package:nextup/services/notification_service.dart';
 import 'package:nextup/services/notifications_store.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+
 class QueueStatusScreen extends StatefulWidget {
   final String serviceName;
   final int tokenNumber;
   final int position;
   final int estimatedTime;
   final dynamic status;
-
   final int queueEntryId;
   final int userId;
+  final int serviceId;
 
   const QueueStatusScreen({
     super.key,
@@ -24,7 +29,7 @@ class QueueStatusScreen extends StatefulWidget {
     required this.status,
     required this.queueEntryId,
     required this.userId,
-
+    required this.serviceId,
 
   });
 
@@ -38,8 +43,10 @@ class _QueueStatusScreenState extends State<QueueStatusScreen>
   late AnimationController _blinkController;
   late Animation<double> _blinkAnimation;
   Timer? _pollingTimer;
+
   bool get isNext => _position == 1 && _status == "WAITING";
   bool get isProcessing => _status == "SERVING";
+
   int _position = 0;
   int _estimatedTime = 0;
   String _status = "";
@@ -49,12 +56,46 @@ class _QueueStatusScreenState extends State<QueueStatusScreen>
   bool notifiedFor1 = false;
   int? _previousPosition;
 
+
+  // ── Start background tracking ────────────────────────────────────────────
+  // ── Start background tracking ──────────────────────────────────────────
+  Future<void> _startBackgroundTracking() async {
+    final service = FlutterBackgroundService();
+    final isRunning = await service.isRunning();
+
+    // Stop any existing session before starting a new one
+    if (isRunning) {
+      service.invoke('stopTracking');
+      await Future.delayed(const Duration(milliseconds: 300));
+    }
+
+    await service.startService();
+
+    // Small delay to let the service initialize before sending the event
+    await Future.delayed(const Duration(milliseconds: 500));
+
+    service.invoke('startTracking', {
+      'serviceName': widget.serviceName,
+      'userId': widget.userId,
+      'currentPosition': widget.position,
+    });
+
+    debugPrint("Background tracking started");
+  }
+
+// ── Stop background tracking ───────────────────────────────────────────
+  Future<void> _stopBackgroundTracking() async {
+    final service = FlutterBackgroundService();
+    service.invoke('stopTracking');
+  }
+
+  // ── Cancel token ────────────────────────────────────────────────────────
   Future<void> cancelToken() async {
     print("QUEUE ENTRY ID: ${widget.queueEntryId}");
     print("USER ID: ${widget.userId}");
 
     final url = Uri.parse(
-        "http://192.168.1.41:8080/api/queue/cancel/${widget.queueEntryId}?userId=${widget.userId}");
+        "https://nextup-backend-production-42bf.up.railway.app/api/queue/cancel/${widget.queueEntryId}?userId=${widget.userId}");
 
     final response = await http.delete(url);
 
@@ -64,92 +105,134 @@ class _QueueStatusScreenState extends State<QueueStatusScreen>
     if (!mounted) return;
 
     if (response.statusCode == 200) {
+      await _stopBackgroundTracking(); // ✅ Stop tracking on cancel
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Token cancelled")),
+        const SnackBar(
+          content: Text("Token cancelled"),
+          behavior: SnackBarBehavior.floating,
+        ),
       );
-
       Navigator.pop(context, true);
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Failed (${response.statusCode})")),
+        SnackBar(
+          content: Text("Failed (${response.statusCode})"),
+          behavior: SnackBarBehavior.floating,
+        ),
       );
     }
   }
 
+  // ── Load queue status ────────────────────────────────────────────────────
+  bool _isDialogShown = false; // add this at class level
+
   Future<void> _loadQueueStatus() async {
     try {
-      print("FETCH USER QUEUE STATUS: ${widget.userId}");
+      final prefs = await SharedPreferences.getInstance();
+      final userId = prefs.getInt('userId');
+
+      if (userId == null || userId == 0) {
+        debugPrint("❌ Invalid userId");
+        return;
+      }
 
       final url = Uri.parse(
-        "http://192.168.1.41:8080/api/queue/user/${widget.userId}",
+        "https://nextup-backend-production-42bf.up.railway.app/api/queue/${widget.serviceId}",
       );
 
       final response = await http.get(url);
 
-      print("STATUS: ${response.statusCode}");
-      print("BODY: ${response.body}");
-
       if (!mounted) return;
 
       if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
 
-        final List data = jsonDecode(response.body);
+        final List waitingList = data["waitingList"] ?? [];
+        final current = data["currentlyServing"];
 
-        if (data.isEmpty) return;
+        // ✅ Check if user is currently being served
+        if (current != null && current["userId"] == userId) {
+          debugPrint("🔥 User is being served");
+          setState(() {
+            _status = "SERVING";
+            _position = 0;
+            _estimatedTime = 0;
+          });
+          return;
+        }
 
-        final queue = data.first;
+        // ✅ Find user in waiting list
+        final userQueue = waitingList.firstWhere(
+              (q) => q["userId"] == userId,
+          orElse: () => null,
+        );
 
-        int position = queue["position"] ?? _position;
-        String serviceName = queue["serviceName"] ?? "Service";
+        // ✅ Not in queue and not serving = completed
+        if (userQueue == null) {
+          debugPrint("✅ User not in queue & not serving → completed");
+          await prefs.remove('avgWaitTime');
+          await _stopBackgroundTracking();
 
-        print("CURRENT POSITION: $position");
+          if (!_isDialogShown && mounted) {
+            _isDialogShown = true;
+            showDialog(
+              context: context,
+              builder: (_) => AlertDialog(
+                title: const Text("Done ✅"),
+                content: const Text("Your request is completed. Thank you!"),
+                actions: [
+                  TextButton(
+                    onPressed: () {
+                      Navigator.pop(context);
+                      Navigator.pop(context);
+                    },
+                    child: const Text("OK"),
+                  ),
+                ],
+              ),
+            );
+          }
+          return;
+        }
 
-        // 🔔 Trigger notification only when position changes
+        int token = userQueue["tokenNumber"];
+        String status = userQueue["status"];
+
+        int position = waitingList.indexWhere(
+              (q) => q["userId"] == userId,
+        ) + 1;
+
+        // ✅ FIX: fallback to current _estimatedTime if prefs is null
+        // This preserves widget.estimatedTime set in initState on first poll
+        int estimatedTime = prefs.getInt('avgWaitTime') ?? _estimatedTime;
+        debugPrint("⏱ estimatedTime: $estimatedTime");
+
         if (_previousPosition != position) {
-
           if (position == 3) {
-            print("CALLING NOTIFICATION SERVICE FOR POSITION 3");
-
             await NotificationService.showNotification(
               "Almost Your Turn",
-              "$serviceName - Only 2 people ahead",
+              "Only 2 people ahead",
             );
-
-            NotificationStore.addNotification(
-              serviceName,
-              "Almost Your Turn",
-              "Only 2 people ahead of you. Get ready!",
-            );
-          }
-
-          if (position == 1) {
-            print("CALLING NOTIFICATION SERVICE FOR POSITION 1");
-
+          } else if (position == 1) {
             await NotificationService.showNotification(
-              "Your Are Next..!",
-              "$serviceName - Be ready to proceed to the service counter",
-            );
-
-            NotificationStore.addNotification(
-              serviceName,
-              "You Are NEXT",
-              "Be ready to proceed to the service counter",
+              "You Are Next!",
+              "Proceed to counter",
             );
           }
-
-          // Update previous position
           _previousPosition = position;
         }
 
         setState(() {
           _position = position;
-          _estimatedTime =
-              queue["averageWaitingTimeMinutes"] ?? _estimatedTime;
-          _status = queue["status"] ?? _status;
+          _estimatedTime = estimatedTime; // ✅ keeps correct value
+          _status = status;
         });
+
+      } else {
+        debugPrint("❌ API error ${response.statusCode}");
       }
     } catch (e) {
-      debugPrint("Queue status error: $e");
+      debugPrint("❌ Error: $e");
     }
   }
 
@@ -157,13 +240,12 @@ class _QueueStatusScreenState extends State<QueueStatusScreen>
   void initState() {
     super.initState();
 
-    // copy initial values from MyTokensPage
     _position = widget.position;
     _estimatedTime = widget.estimatedTime;
     _status = widget.status;
     notifiedFor3 = false;
     notifiedFor1 = false;
-    // blinking animation
+
     _blinkController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 900),
@@ -172,147 +254,161 @@ class _QueueStatusScreenState extends State<QueueStatusScreen>
     _blinkAnimation =
         Tween<double>(begin: 0.4, end: 1.0).animate(_blinkController);
 
-    // load latest queue status immediately
     _loadQueueStatus();
 
-    // polling every 5 seconds
     _pollingTimer = Timer.periodic(
       const Duration(seconds: 5),
           (timer) {
-        if (mounted) {
-
-          _loadQueueStatus();
-        }
+        if (mounted) _loadQueueStatus();
       },
     );
+
+    _startBackgroundTracking(); // ✅ Start background tracking when screen opens
   }
 
   @override
   void dispose() {
-    _blinkController.dispose(); // stop animation
-    _pollingTimer?.cancel();    // stop polling
+    _blinkController.dispose();
+    _pollingTimer?.cancel();
+    // ✅ Do NOT stop background service here — let it run after screen closes
     super.dispose();
+  }
+
+  // ── Status colors ────────────────────────────────────────────────────────
+  Color get _accentColor {
+    if (isProcessing) return const Color(0xFF16A34A);
+    if (isNext) return const Color(0xFF4F46E5);
+    return const Color(0xFF6366F1);
+  }
+
+  Color get _accentBg {
+    if (isProcessing) return const Color(0xFFDCFCE7);
+    if (isNext) return const Color(0xFFEEF2FF);
+    return const Color(0xFFF1F5F9);
+  }
+
+  String get _statusLabel {
+    if (isProcessing) return "Being Served";
+    if (isNext) return "You're Next";
+    return "Waiting";
+  }
+
+  String get _statusMessage {
+    if (isProcessing) return "Please proceed to the service counter.";
+    if (isNext) return "Get ready — you're next in line!";
+    return "We'll notify you when it's your turn.";
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF3F5FA),
-      body: SafeArea(
-        child: Column(
-          children: [
-
-            /// ===== PREMIUM HEADER =====
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.fromLTRB(24, 18, 24, 22),
-              decoration: const BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [
-                    Color(0xFF4F46E5),
-                    Color(0xFF7C3AED),
-                  ],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-                borderRadius: BorderRadius.vertical(
-                  bottom: Radius.circular(28),
-                ),
+      backgroundColor: const Color(0xFFF6F7FB),
+      body: Column(
+        children: [
+          // ── Header ────────────────────────────────────────────────────
+          Container(
+            width: double.infinity,
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: isProcessing
+                    ? [const Color(0xFF15803D), const Color(0xFF16A34A)]
+                    : [const Color(0xFF3730A3), const Color(0xFF6366F1)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
               ),
-              child: SizedBox(
-                height: 80,
-                child: Stack(
+              borderRadius: const BorderRadius.only(
+                bottomLeft: Radius.circular(32),
+                bottomRight: Radius.circular(32),
+              ),
+            ),
+            child: SafeArea(
+              bottom: false,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 16, 20, 28),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    // Back + title row
+                    Row(
+                      children: [
+                        GestureDetector(
+                          onTap: () => Navigator.pop(context),
+                          child: Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withOpacity(0.15),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: const Icon(
+                              Icons.arrow_back_ios_new_rounded,
+                              color: Colors.white,
+                              size: 16,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            widget.serviceName,
+                            style: const TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.white,
+                              letterSpacing: -0.2,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        // Status pill
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withOpacity(0.18),
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(
+                              color: Colors.white.withOpacity(0.25),
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              FadeTransition(
+                                opacity: _blinkAnimation,
+                                child: Container(
+                                  width: 7,
+                                  height: 7,
+                                  decoration: BoxDecoration(
+                                    color: isProcessing
+                                        ? const Color(0xFF4ADE80)
+                                        : Colors.white,
+                                    shape: BoxShape.circle,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                _statusLabel,
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
 
-                    /// TOP LEFT LABEL
-                    const Align(
-                      alignment: Alignment.topLeft,
+                    const SizedBox(height: 6),
+                    Padding(
+                      padding: const EdgeInsets.only(left: 44),
                       child: Text(
                         "Live Queue Status",
                         style: TextStyle(
-                          color: Colors.white70,
                           fontSize: 12,
-                          letterSpacing: 0.5,
-                        ),
-                      ),
-                    ),
-
-                    /// CENTERED SERVICE NAME
-                    Align(
-                      alignment: Alignment.center,
-                      child: Text(
-                        widget.serviceName,
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 26,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: 0.6,
-                        ),
-                      ),
-                    ),
-
-                    /// STATUS BAR (BOTTOM LEFT)
-                    Align(
-                      alignment: Alignment.bottomLeft,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.15),
-                          borderRadius: BorderRadius.circular(20),
-                          border: Border.all(
-                            color: Colors.white.withOpacity(0.2),
-                          ),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-
-                            /// STATUS DOT
-                            FadeTransition(
-                              opacity: (isProcessing || widget.status == "WAITING")
-                                  ? _blinkAnimation
-                                  : const AlwaysStoppedAnimation(1),
-                              child: Container(
-                                width: 9,
-                                height: 9,
-                                decoration: BoxDecoration(
-                                  color: isProcessing
-                                      ? Colors.green
-                                      : isNext
-                                      ? Colors.white
-                                      : Colors.white70,
-                                  shape: BoxShape.circle,
-                                  boxShadow: isProcessing
-                                      ? [
-                                    BoxShadow(
-                                      color: Colors.green.withOpacity(0.6),
-                                      blurRadius: 8,
-                                      spreadRadius: 1.5,
-                                    )
-                                  ]
-                                      : [],
-                                ),
-                              ),
-                            ),
-
-                            const SizedBox(width: 8),
-
-                            /// STATUS TEXT
-                            Text(
-                              isProcessing
-                                  ? "Serving"
-                                  : isNext
-                                  ? "Up Next"
-                                  : "Waiting",
-                              style: const TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w500,
-                                color: Colors.white,
-                                letterSpacing: 0.2,
-                              ),
-                            ),
-                          ],
+                          color: Colors.white.withOpacity(0.6),
                         ),
                       ),
                     ),
@@ -320,235 +416,325 @@ class _QueueStatusScreenState extends State<QueueStatusScreen>
                 ),
               ),
             ),
+          ),
 
-            const SizedBox(height: 32),
-
-            /// ===== TOKEN HERO CARD =====
-            Container(
-              margin: const EdgeInsets.symmetric(horizontal: 24),
-              padding: const EdgeInsets.symmetric(vertical: 36),
-              width: double.infinity,
-              decoration: BoxDecoration(
-                gradient: isProcessing
-                    ? const LinearGradient(
-                  colors: [
-                    Color(0xFFE8FFF7),
-                    Color(0xFFDDF6FF),
-                    Color(0xFFEDE8FF),
-                  ],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                )
-                    : const LinearGradient(
-                  colors: [
-                    Colors.white,
-                    Colors.white,
-                  ],
-                ),
-                borderRadius: BorderRadius.circular(28),
-                border: Border.all(
-                  color: isProcessing
-                      ? const Color(0xFFD7F5EA)
-                      : const Color(0xFFE8EBF3),
-                  width: 1.2,
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.05),
-                    blurRadius: 30,
-                    offset: const Offset(0, 14),
-                  ),
-                ],
-              ),
+          // ── Body ──────────────────────────────────────────────────────
+          Expanded(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(20, 28, 20, 24),
               child: Column(
                 children: [
+                  // ── Token card ───────────────────────────────────────
+                  Container(
+                    width: double.infinity,
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(24),
+                      boxShadow: [
+                        BoxShadow(
+                          color: _accentColor.withOpacity(0.1),
+                          blurRadius: 24,
+                          offset: const Offset(0, 8),
+                        ),
+                      ],
+                    ),
+                    child: Column(
+                      children: [
+                        // Color top bar
+                        Container(
+                          height: 5,
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              colors: isProcessing
+                                  ? [
+                                const Color(0xFF16A34A),
+                                const Color(0xFF4ADE80)
+                              ]
+                                  : isNext
+                                  ? [
+                                const Color(0xFF4F46E5),
+                                const Color(0xFF818CF8)
+                              ]
+                                  : [
+                                const Color(0xFF6366F1),
+                                const Color(0xFFA5B4FC)
+                              ],
+                            ),
+                            borderRadius: const BorderRadius.only(
+                              topLeft: Radius.circular(24),
+                              topRight: Radius.circular(24),
+                            ),
+                          ),
+                        ),
 
-                  const Text(
-                    "Your Token",
-                    style: TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.w600,
-                      letterSpacing: 0.5,
-                      color: Colors.grey,
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(24, 28, 24, 28),
+                          child: Column(
+                            children: [
+                              Text(
+                                "YOUR TOKEN",
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
+                                  color: Colors.grey.shade400,
+                                  letterSpacing: 1.5,
+                                ),
+                              ),
+                              const SizedBox(height: 12),
+
+                              // Token number
+                              Container(
+                                width: 120,
+                                height: 120,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: _accentBg,
+                                  border: Border.all(
+                                    color: _accentColor.withOpacity(0.2),
+                                    width: 2,
+                                  ),
+                                ),
+                                child: Center(
+                                  child: Text(
+                                    "${widget.tokenNumber}",
+                                    style: TextStyle(
+                                      fontSize: 44,
+                                      fontWeight: FontWeight.w800,
+                                      color: _accentColor,
+                                      letterSpacing: -1,
+                                    ),
+                                  ),
+                                ),
+                              ),
+
+                              const SizedBox(height: 20),
+
+                              // Status message
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 16, vertical: 10),
+                                decoration: BoxDecoration(
+                                  color: _accentBg,
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      isProcessing
+                                          ? Icons.check_circle_outline_rounded
+                                          : isNext
+                                          ? Icons.notifications_active_outlined
+                                          : Icons.hourglass_top_rounded,
+                                      size: 16,
+                                      color: _accentColor,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      _statusMessage,
+                                      style: TextStyle(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w500,
+                                        color: _accentColor,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+
+                              // Typing dots when serving
+                              if (isProcessing) ...[
+                                const SizedBox(height: 16),
+                                Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    _typingDot(delay: 0),
+                                    const SizedBox(width: 6),
+                                    _typingDot(delay: 200),
+                                    const SizedBox(width: 6),
+                                    _typingDot(delay: 400),
+                                  ],
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                      ],
                     ),
                   ),
 
                   const SizedBox(height: 20),
 
-                  ShaderMask(
-                    shaderCallback: (bounds) => const LinearGradient(
-                      colors: [
-                        Color(0xFF12C48B),
-                        Color(0xFF7B61FF),
-                      ],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ).createShader(bounds),
-                    child: Text(
-                      widget.tokenNumber.toString(),
-                      style: const TextStyle(
-                        fontSize: 48,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: 6,
-                        fontFamily: "monospace",
-                        color: Colors.white,
+                  // ── Info cards row ───────────────────────────────────
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _infoCard(
+                          icon: Icons.format_list_numbered_rounded,
+                          label: "Position",
+                          value: isProcessing ? "Serving" : "$_position",
+                        ),
                       ),
-                    ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: _infoCard(
+                          icon: Icons.schedule_rounded,
+                          label: "Est. Wait",
+                          value: isProcessing ? "--" : "$_estimatedTime min",
+                        ),
+                      ),
+                    ],
                   ),
 
-                  const SizedBox(height: 18),
+                  const SizedBox(height: 28),
 
+                  // ── Footer note ──────────────────────────────────────
                   Text(
                     isProcessing
-                        ? "Your service is being processed."
-                        : isNext
-                        ? "You're next! Please be ready."
-                        : "Please wait for your turn.",
+                        ? "Please proceed to the service counter."
+                        : "You will receive a notification when it's your turn.",
                     textAlign: TextAlign.center,
                     style: TextStyle(
-                      fontSize: 14,
-                      color: isProcessing
-                          ? Colors.green
-                          : isNext
-                          ? const Color(0xFF5B6CFF)
-                          : Colors.grey,
-                      fontWeight: FontWeight.w600,
+                      fontSize: 13,
+                      color: Colors.grey.shade400,
+                      height: 1.5,
                     ),
                   ),
 
-                  const SizedBox(height: 22),
-
-                  if (isProcessing)
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        _typingDot(delay: 0),
-                        const SizedBox(width: 6),
-                        _typingDot(delay: 200),
-                        const SizedBox(width: 6),
-                        _typingDot(delay: 400),
-                      ],
-                    ),
-                ],
-              ),
-            ),
-
-            const SizedBox(height: 28),
-
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: _PremiumInfoCard(
-                      icon: Icons.format_list_numbered,
-                      title: "Your Position In Queue",
-                      value: isProcessing
-                          ? "Serving"
-                          : _position.toString(),   // ✅ FIXED
-                    ),
-                  ),
-                  const SizedBox(width: 18),
-                  Expanded(
-                    child: _PremiumInfoCard(
-                      icon: Icons.schedule_rounded,
-                      title: "Estimated Waiting Time",
-                      value: isProcessing
-                          ? "--"
-                          : "$_estimatedTime min",  // ✅ FIXED
-                    ),
-                  ),
-                ],
-              ),
-            ),
-
-            const Spacer(),
-
-            Padding(
-              padding: const EdgeInsets.only(bottom: 28),
-              child: Text(
-                isProcessing
-                    ? "Please proceed to the service counter."
-                    : "You will receive a notification when it's your turn.",
-                style: TextStyle(
-                  color: Colors.grey.shade500,
-                  fontSize: 13,
-                ),
-              ),
-            ),
-
-
-            if (widget.status == "WAITING") ...[
-              const SizedBox(height: 1), // smaller space above → pulls button upward
-
-              Padding(
-                padding: const EdgeInsets.only(bottom: 15), // adjust this to fine-tune position
-                child: Center(
-                  child: SizedBox(
-                    width: 180,
-                    height: 40,
-                    child: ElevatedButton.icon(
-                      icon: const Icon(Icons.cancel_outlined, size: 18),
-                      label: const Text(
-                        "Cancel Token",
-                        style: TextStyle(
-                          fontWeight: FontWeight.w600,
-                          letterSpacing: 0.3,
-                        ),
-                      ),
-
-                      onPressed: () async {
-                        final confirm = await showDialog(
-                          context: context,
-                          builder: (context) => AlertDialog(
-                            title: const Text("Cancel Token"),
-                            content: const Text(
-                              "Are you sure you want to cancel this token?",
-                            ),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(14),
-                            ),
-                            actions: [
-                              TextButton(
-                                onPressed: () => Navigator.pop(context, false),
-                                child: const Text("No"),
-                              ),
-                              ElevatedButton(
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: const Color(0xFFE53935),
-                                  foregroundColor: Colors.white,
-                                ),
-                                onPressed: () => Navigator.pop(context, true),
-                                child: const Text("Yes"),
-                              ),
-                            ],
+                  // ── Cancel button ────────────────────────────────────
+                  if (widget.status == "WAITING") ...[
+                    const SizedBox(height: 28),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 50,
+                      child: ElevatedButton.icon(
+                        icon: const Icon(Icons.cancel_outlined, size: 18),
+                        label: const Text(
+                          "Cancel Token",
+                          style: TextStyle(
+                            fontWeight: FontWeight.w600,
+                            fontSize: 15,
                           ),
-                        );
-
-                        if (confirm == true) {
-                          cancelToken();
-                        }
-                      },
-
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFFE53935),
-                        foregroundColor: Colors.white,
-                        elevation: 2,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        onPressed: () async {
+                          final confirm = await showDialog(
+                            context: context,
+                            builder: (context) => AlertDialog(
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(20),
+                              ),
+                              title: const Text(
+                                "Cancel Token?",
+                                style: TextStyle(fontWeight: FontWeight.w700),
+                              ),
+                              content: const Text(
+                                "Are you sure you want to cancel this token?",
+                              ),
+                              actions: [
+                                TextButton(
+                                  onPressed: () =>
+                                      Navigator.pop(context, false),
+                                  child: const Text(
+                                    "No",
+                                    style:
+                                    TextStyle(color: Color(0xFF6B7280)),
+                                  ),
+                                ),
+                                ElevatedButton(
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: const Color(0xFFDC2626),
+                                    foregroundColor: Colors.white,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                  ),
+                                  onPressed: () =>
+                                      Navigator.pop(context, true),
+                                  child: const Text("Yes, Cancel"),
+                                ),
+                              ],
+                            ),
+                          );
+                          if (confirm == true) cancelToken();
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFFFEF2F2),
+                          foregroundColor: const Color(0xFFDC2626),
+                          elevation: 0,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                            side: const BorderSide(
+                              color: Color(0xFFFECACA),
+                            ),
+                          ),
                         ),
                       ),
                     ),
-                  ),
-                ),
+                  ],
+                ],
               ),
-            ]
-          ],
-        ),
+            ),
+          ),
+        ],
       ),
     );
   }
 
+  // ── Info card ────────────────────────────────────────────────────────────
+  Widget _infoCard({
+    required IconData icon,
+    required String label,
+    required String value,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 16,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: const Color(0xFFEEF2FF),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(icon, color: const Color(0xFF4F46E5), size: 18),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: Colors.grey.shade400,
+              letterSpacing: 0.4,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            value,
+            style: const TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.w700,
+              color: Color(0xFF111827),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Typing dot ───────────────────────────────────────────────────────────
   Widget _typingDot({required int delay}) {
     return TweenAnimationBuilder(
       tween: Tween(begin: 0.3, end: 1.0),
@@ -561,7 +747,7 @@ class _QueueStatusScreenState extends State<QueueStatusScreen>
             width: 8,
             height: 8,
             decoration: const BoxDecoration(
-              color: Color(0xFF0FAF87),
+              color: Color(0xFF16A34A),
               shape: BoxShape.circle,
             ),
           ),
@@ -571,8 +757,7 @@ class _QueueStatusScreenState extends State<QueueStatusScreen>
   }
 }
 
-/// ===== PREMIUM INFO CARD =====
-
+// ── Premium Info Card (kept for compatibility) ────────────────────────────────
 class _PremiumInfoCard extends StatelessWidget {
   final IconData icon;
   final String title;
@@ -601,28 +786,16 @@ class _PremiumInfoCard extends StatelessWidget {
       ),
       child: Column(
         children: [
-          Icon(icon, color: const Color(0xFF5B6CFF), size: 26),
+          Icon(icon, color: const Color(0xFF4F46E5), size: 26),
           const SizedBox(height: 12),
-          Text(
-            title,
-            style: const TextStyle(
-              fontSize: 12,
-              color: Colors.grey,
-            ),
-          ),
+          Text(title,
+              style: const TextStyle(fontSize: 12, color: Colors.grey)),
           const SizedBox(height: 6),
-          Text(
-            value,
-            style: const TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
+          Text(value,
+              style: const TextStyle(
+                  fontSize: 20, fontWeight: FontWeight.w600)),
         ],
       ),
     );
   }
 }
-
-
-
