@@ -39,7 +39,7 @@ class _UserDashboardState extends State<UserDashboard> {
       if (token == null) return;
 
       final response = await http.get(
-        Uri.parse("https://nextup-backend-production-42bf.up.railway.app/api/user/profile"),
+        Uri.parse("https://nextup-backend-zlou.onrender.com/api/profile"),
         headers: {"Authorization": "Bearer $token"},
       );
 

@@ -21,7 +21,7 @@ class _MyTokensPageState extends State<MyTokensPage> {
   bool isLoading = true;
   Timer? _timer;
 
-  final String baseUrl = "https://nextup-backend-production-42bf.up.railway.app";
+  final String baseUrl = "https://nextup-backend-zlou.onrender.com";
 
   @override
   void initState() {
@@ -36,7 +36,7 @@ class _MyTokensPageState extends State<MyTokensPage> {
   Future<void> _fetchTokens() async {
     try {
       final response = await http.get(
-        Uri.parse("$baseUrl/api/queue/user/${widget.userId}"),
+        Uri.parse("$baseUrl/api/user/${widget.userId}"),
       );
       if (response.statusCode == 200) {
         if (!mounted) return;

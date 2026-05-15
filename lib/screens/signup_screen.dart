@@ -29,7 +29,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
   bool _isServiceProvider = false;
 
 
-  final String baseUrl = "https://nextup-backend-production-42bf.up.railway.app/api/auth/signup";
+  final String baseUrl = "https://nextup-backend-zlou.onrender.com/api/auth/signup";
 
   bool _isValidEmail(String email) {
     final emailRegex = RegExp(
@@ -131,7 +131,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
 
     setState(() => _isLoading = true);
 
-    final url = Uri.parse("https://nextup-backend-production-42bf.up.railway.app/auth/signup");
+    final url = Uri.parse("https://nextup-backend-zlou.onrender.com/api/auth/signup");
 
     final headers = {
       'Content-Type': 'application/json',

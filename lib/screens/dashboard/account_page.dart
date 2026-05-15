@@ -66,7 +66,7 @@ class _AccountPageState extends State<AccountPage> {
       if (token == null) return;
 
       final response = await http.get(
-        Uri.parse("https://nextup-backend-production-42bf.up.railway.app/api/user/profile"),
+        Uri.parse("https://nextup-backend-zlou.onrender.com/api/profile"),
         headers: {"Authorization": "Bearer $token"},
       );
 
@@ -102,7 +102,7 @@ class _AccountPageState extends State<AccountPage> {
       if (editMobile) body['mobile'] = mobileController.text.trim();
 
       final response = await http.put(
-        Uri.parse("https://nextup-backend-production-42bf.up.railway.app/api/user/profile"),
+        Uri.parse("https://nextup-backend-zlou.onrender.com/api/profile"),
         headers: {
           "Content-Type": "application/json",
           "Authorization": "Bearer $token",

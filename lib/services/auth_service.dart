@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 class AuthService {
-  static const String baseUrl = "http://192.168.1.41"; // Android emulator → your backend
+  static const String baseUrl = "https://nextup-backend-zlou.onrender.com"; // Android emulator → your backend
 
   Future<bool> login(String email, String password) async {
     final url = Uri.parse("$baseUrl/api/auth/login");

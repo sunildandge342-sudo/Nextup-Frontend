@@ -8,7 +8,7 @@ import '../models/service_model.dart';
 
 class ServiceApi {
 
-  static const String baseUrl = "https://nextup-backend-production-42bf.up.railway.app/api/services";
+  static const String baseUrl = "https://nextup-backend-zlou.onrender.com/api/services";
 
   static Future<List<ServiceModel>> getServices(int providerId) async {
     final response =

@@ -95,7 +95,7 @@ class _QueueStatusScreenState extends State<QueueStatusScreen>
     print("USER ID: ${widget.userId}");
 
     final url = Uri.parse(
-        "https://nextup-backend-production-42bf.up.railway.app/api/queue/cancel/${widget.queueEntryId}?userId=${widget.userId}");
+        "https://nextup-backend-zlou.onrender.com/api/user/cancel/${widget.queueEntryId}?userId=${widget.userId}");
 
     final response = await http.delete(url);
 
@@ -137,7 +137,7 @@ class _QueueStatusScreenState extends State<QueueStatusScreen>
       }
 
       final url = Uri.parse(
-        "https://nextup-backend-production-42bf.up.railway.app/api/queue/${widget.serviceId}",
+        "https://nextup-backend-zlou.onrender.com/api/provider/${widget.serviceId}",
       );
 
       final response = await http.get(url);

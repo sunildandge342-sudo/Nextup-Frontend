@@ -28,7 +28,7 @@ class _ScanQRScreenState extends State<ScanQRScreen> {
 
   final MobileScannerController _controller = MobileScannerController();
 
-  final String baseUrl = "https://nextup-backend-production-42bf.up.railway.app";
+  final String baseUrl = "https://nextup-backend-zlou.onrender.com";
 
   Future<void> _joinQueue(String scannedValue) async {
     if (_isProcessing) return;
@@ -49,7 +49,7 @@ class _ScanQRScreenState extends State<ScanQRScreen> {
     try {
       // ✅ Correct endpoint
       final response = await http.post(
-        Uri.parse("$baseUrl/api/queue/join"),
+        Uri.parse("$baseUrl/api/user/token/join"),
         headers: {"Content-Type": "application/json"},
         body: jsonEncode({
           "userId": widget.userId,

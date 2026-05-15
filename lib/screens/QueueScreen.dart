@@ -86,7 +86,7 @@ class _QueueScreenState extends State<QueueScreen> with TickerProviderStateMixin
   DateTime? _servingStartTime;
   int?      _trackedTokenNumber;
 
-  final String baseUrl = "https://nextup-backend-production-42bf.up.railway.app/api";
+  final String baseUrl = "https://nextup-backend-zlou.onrender.com/api";
 
   // ── Timer display ─────────────────────────────────────────────────────
   String _getLiveTime() {
@@ -158,7 +158,7 @@ class _QueueScreenState extends State<QueueScreen> with TickerProviderStateMixin
   Future<void> _toggleStatus(bool value) async {
     try {
       final response = await http.patch(
-        Uri.parse("$baseUrl/services/${widget.serviceId}/status"),
+        Uri.parse("$baseUrl/provider/services/${widget.serviceId}/status"),
         headers: {"Content-Type": "application/json"},
         body: jsonEncode({"isActive": value}),
       );
@@ -181,7 +181,7 @@ class _QueueScreenState extends State<QueueScreen> with TickerProviderStateMixin
     });
     try {
       final response = await http.post(
-        Uri.parse("$baseUrl/queue/${widget.serviceId}/call-next"),
+        Uri.parse("$baseUrl/api/provider/${widget.serviceId}/call-next"),
       );
       if (response.statusCode == 200) {
         await _loadQueue(callerGeneration: _serveGeneration);
@@ -211,7 +211,7 @@ class _QueueScreenState extends State<QueueScreen> with TickerProviderStateMixin
 
     try {
       final response = await http.post(
-        Uri.parse("$baseUrl/queue/${widget.serviceId}/complete-current"),
+        Uri.parse("$baseUrl/provider/${widget.serviceId}/complete-current"),
       ).timeout(const Duration(seconds: 8));
 
       if (!mounted) return;

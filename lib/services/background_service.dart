@@ -8,7 +8,7 @@ import 'package:nextup/services/notifications_store.dart';
 import 'package:flutter/widgets.dart';
 
 // ✅ Move your base URL here so it's easy to change
-const String _baseUrl = "https://nextup-backend-production-42bf.up.railway.app";
+const String _baseUrl = "https://nextup-backend-zlou.onrender.com";
 
 Future<void> initBackgroundService() async {
   final service = FlutterBackgroundService();

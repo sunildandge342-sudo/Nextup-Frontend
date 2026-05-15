@@ -3,7 +3,7 @@ import 'package:http/http.dart' as http;
 
 class ApiService {
   // ⚙️ Replace with your backend IP and port
-  static const String baseUrl = "https://nextup-backend-production-42bf.up.railway.app";
+  static const String baseUrl = "https://nextup-backend-zlou.onrender.com";
 
   /// ✅ Generic POST request for reusability
   static Future<Map<String, dynamic>> postRequest(
@@ -32,7 +32,7 @@ class ApiService {
   static Future<Map<String, dynamic>> login(
       String email, String password) async {
 
-    final url = Uri.parse("$baseUrl/auth/login");
+    final url = Uri.parse("$baseUrl/api/auth/login");
 
     try {
       final response = await http.post(
@@ -116,7 +116,7 @@ class ApiService {
       String resetToken, String newPassword) async {
     try {
       final response = await http.put(
-        Uri.parse("$baseUrl/api/user/reset-password"),
+        Uri.parse("$baseUrl/api/reset-password"),
         headers: {"Content-Type": "application/json"},
         body: jsonEncode({
           "resetToken": resetToken,
@@ -176,35 +176,10 @@ class ApiService {
       return {"message": "Error: ${response.body}"};
     }
   }
-  static Future<Map<String, dynamic>?> socialLogin(
-      String provider,
-      String token,
-      ) async {
-    try {
-      final response = await http.post(
-        Uri.parse("$baseUrl/api/auth/social-login"),
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: jsonEncode({
-          "provider": provider,
-          "token": token,
-        }),
-      );
 
-      if (response.statusCode == 200) {
-        return jsonDecode(response.body) as Map<String, dynamic>;
-      } else {
-        return null;
-      }
-    } catch (e) {
-      print("🔥 Social login error: $e");
-      return null;
-    }
-  }
   static Future<bool> requestSignupOtp(String email) async {
     final response = await http.post(
-      Uri.parse('$baseUrl/auth/signup/requestOtp'),
+      Uri.parse('$baseUrl/api/auth/signup/requestOtp'),
       headers: {
         'Content-Type': 'application/json',
       },
@@ -228,7 +203,7 @@ class ApiService {
     required String otp,
   }) async {
     final response = await http.post(
-      Uri.parse('$baseUrl/auth/signup/verifyOtp'),
+      Uri.parse('$baseUrl/api/auth/signup/verifyOtp'),
       headers: {
         'Content-Type': 'application/json',
       },
@@ -256,7 +231,7 @@ class ApiService {
     required String emailVerifiedToken,
   }) async {
     final response = await http.post(
-      Uri.parse('$baseUrl/auth/signup'),
+      Uri.parse('$baseUrl/api/auth/signup'),
       headers: {
         'Content-Type': 'application/json',
         'Authorization': 'Bearer $emailVerifiedToken',
@@ -269,7 +244,7 @@ class ApiService {
       }),
     );
 
-    if (response.statusCode == 201) {
+    if (response.statusCode == 201 || response.statusCode == 201) {
       return true;
     } else {
       final data = jsonDecode(response.body);
