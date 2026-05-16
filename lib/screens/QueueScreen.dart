@@ -133,7 +133,7 @@ class _QueueScreenState extends State<QueueScreen> with TickerProviderStateMixin
       if (_isMarkingServed) return;
 
       if (response.statusCode != 200) {
-        debugPrint("Queue API failed: ${response.statusCode}");
+        debugPrint("Queue API failed :: ${response.statusCode}");
         return;
       }
 
