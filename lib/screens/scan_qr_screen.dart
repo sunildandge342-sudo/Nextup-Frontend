@@ -12,6 +12,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:http/http.dart' as http;
+import 'package:nextup/services/api_services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 class ScanQRScreen extends StatefulWidget {
   final int userId;
@@ -46,11 +47,12 @@ class _ScanQRScreenState extends State<ScanQRScreen> {
     setState(() => _isProcessing = true);
     _controller.stop();
 
+
     try {
       // ✅ Correct endpoint
       final response = await http.post(
         Uri.parse("$baseUrl/api/user/token/join"),
-        headers: {"Content-Type": "application/json"},
+        headers: await ApiService.getAuthHeaders(),
         body: jsonEncode({
           "userId": widget.userId,
           "serviceId": serviceId,

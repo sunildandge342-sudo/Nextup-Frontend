@@ -34,9 +34,12 @@ class _MyTokensPageState extends State<MyTokensPage> {
   }
 
   Future<void> _fetchTokens() async {
+
+    final headers = await ApiService.getAuthHeaders();
     try {
       final response = await http.get(
         Uri.parse("$baseUrl/api/user/${widget.userId}"),
+        headers: headers
       );
       if (response.statusCode == 200) {
         if (!mounted) return;

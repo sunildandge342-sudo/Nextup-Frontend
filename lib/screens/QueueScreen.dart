@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'package:nextup/services/api_services.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
 class QueueScreen extends StatefulWidget {
@@ -123,7 +124,8 @@ class _QueueScreenState extends State<QueueScreen> with TickerProviderStateMixin
 
     try {
       final response = await http
-          .get(Uri.parse("$baseUrl/queue/${widget.serviceId}"))
+          .get(Uri.parse("$baseUrl/provider/${widget.serviceId}"),
+           headers: await ApiService.getAuthHeaders(),)
           .timeout(const Duration(seconds: 8));
 
       if (_isDisposed || !mounted) return;
@@ -156,12 +158,20 @@ class _QueueScreenState extends State<QueueScreen> with TickerProviderStateMixin
   }
 
   Future<void> _toggleStatus(bool value) async {
+
+
     try {
-      final response = await http.patch(
-        Uri.parse("$baseUrl/provider/services/${widget.serviceId}/status"),
-        headers: {"Content-Type": "application/json"},
-        body: jsonEncode({"isActive": value}),
-      );
+    final response = await http.patch(
+    Uri.parse(
+    "$baseUrl/provider/services/${widget.serviceId}/status",
+    ),
+
+    headers: await ApiService.getAuthHeaders(),
+
+    body: jsonEncode({
+    "isActive": value,
+    }),
+    );
       if (response.statusCode == 200) {
         setState(() => _isActive = value);
       } else {
@@ -181,7 +191,8 @@ class _QueueScreenState extends State<QueueScreen> with TickerProviderStateMixin
     });
     try {
       final response = await http.post(
-        Uri.parse("$baseUrl/api/provider/${widget.serviceId}/call-next"),
+        Uri.parse("$baseUrl/provider/${widget.serviceId}/call-next"),
+        headers: await ApiService.getAuthHeaders(),
       );
       if (response.statusCode == 200) {
         await _loadQueue(callerGeneration: _serveGeneration);
@@ -212,6 +223,7 @@ class _QueueScreenState extends State<QueueScreen> with TickerProviderStateMixin
     try {
       final response = await http.post(
         Uri.parse("$baseUrl/provider/${widget.serviceId}/complete-current"),
+        headers: await ApiService.getAuthHeaders(),
       ).timeout(const Duration(seconds: 8));
 
       if (!mounted) return;

@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 
 class ApiService {
   // ⚙️ Replace with your backend IP and port
@@ -250,6 +251,18 @@ class ApiService {
       final data = jsonDecode(response.body);
       throw Exception(data['message'] ?? 'Signup failed');
     }
+  }
+
+  static Future<Map<String, String>> getAuthHeaders() async {
+
+    final prefs = await SharedPreferences.getInstance();
+
+    String? token = prefs.getString("token");
+
+    return {
+      "Content-Type": "application/json",
+      "Authorization": "Bearer $token",
+    };
   }
 }
 

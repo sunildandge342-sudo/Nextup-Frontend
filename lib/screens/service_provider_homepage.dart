@@ -8,6 +8,7 @@ import 'package:nextup/screens/enter_code_screen.dart';
 import 'package:nextup/screens/browse_services_screen.dart';
 import 'package:nextup/screens/dashboard/help_page.dart';
 import 'package:nextup/screens/dashboard/account_page.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'QueueScreen.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -61,22 +62,43 @@ class _ServiceProviderHomePageState extends State<ServiceProviderHomePage>
 
   // ── API: fetch ────────────────────────────────────────────────────────
   Future<void> _fetchServices() async {
+
     setState(() {
       _isLoading = true;
-      _hasError  = false;
+      _hasError = false;
     });
+
     try {
-      final data = await ServiceApi.getServices(widget.providerId);
+
+      final prefs = await SharedPreferences.getInstance();
+
+      String? token = prefs.getString("token");
+
+      if (token == null) {
+        throw Exception("Token not found");
+      }
+
+      final data = await ServiceApi.getServices(
+        widget.providerId,
+        token,
+      );
+
       if (!mounted) return;
+
       setState(() {
-        _services  = data;
+        _services = data;
         _isLoading = false;
       });
+
     } catch (e) {
+
+      print("❌ FETCH SERVICES ERROR: $e");
+
       if (!mounted) return;
+
       setState(() {
         _isLoading = false;
-        _hasError  = true;
+        _hasError = true;
       });
     }
   }
@@ -922,6 +944,13 @@ class _ServiceProviderHomePageState extends State<ServiceProviderHomePage>
             }
 
             setStateDialog(() => isSaving = true);
+            final prefs = await SharedPreferences.getInstance();
+
+            String? token = prefs.getString("token");
+
+            if (token == null) {
+              throw Exception("Token not found");
+            }
 
             try {
               final newService = await ServiceApi.createService({
@@ -929,7 +958,8 @@ class _ServiceProviderHomePageState extends State<ServiceProviderHomePage>
                 "name":        name,
                 "description": description,
                 if (maxCapacity != null) "maxCapacity": maxCapacity,
-              });
+              },
+              token);
               if (!mounted) return;
               setState(() => _services.insert(0, newService));
               Navigator.pop(dialogContext);

@@ -8,6 +8,7 @@ import 'package:nextup/services/background_service.dart';
 import 'package:nextup/services/notification_service.dart';
 import 'package:nextup/services/notifications_store.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:nextup/services/api_services.dart';
 
 
 class QueueStatusScreen extends StatefulWidget {
@@ -89,15 +90,20 @@ class _QueueStatusScreenState extends State<QueueStatusScreen>
     service.invoke('stopTracking');
   }
 
+
+
   // ── Cancel token ────────────────────────────────────────────────────────
   Future<void> cancelToken() async {
     print("QUEUE ENTRY ID: ${widget.queueEntryId}");
     print("USER ID: ${widget.userId}");
 
+    final headers = await ApiService.getAuthHeaders();
+
     final url = Uri.parse(
         "https://nextup-backend-zlou.onrender.com/api/user/cancel/${widget.queueEntryId}?userId=${widget.userId}");
 
-    final response = await http.delete(url);
+    final response = await http.delete(url,
+    headers: headers);
 
     print("STATUS: ${response.statusCode}");
     print("BODY: ${response.body}");
@@ -126,6 +132,8 @@ class _QueueStatusScreenState extends State<QueueStatusScreen>
   // ── Load queue status ────────────────────────────────────────────────────
   bool _isDialogShown = false; // add this at class level
 
+
+
   Future<void> _loadQueueStatus() async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -136,11 +144,15 @@ class _QueueStatusScreenState extends State<QueueStatusScreen>
         return;
       }
 
+
+
       final url = Uri.parse(
         "https://nextup-backend-zlou.onrender.com/api/provider/${widget.serviceId}",
       );
 
-      final response = await http.get(url);
+      final headers = await ApiService.getAuthHeaders();
+      final response = await http.get(url,
+          headers: headers);
 
       if (!mounted) return;
 
