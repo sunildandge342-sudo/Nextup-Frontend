@@ -1,3 +1,4 @@
+import 'package:nextup/screens/payments_page.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
@@ -66,7 +67,7 @@ class _AccountPageState extends State<AccountPage> {
       if (token == null) return;
 
       final response = await http.get(
-        Uri.parse("https://nextup-backend-zlou.onrender.com/api/profile"),
+        Uri.parse("http://192.168.1.34:8080/api/profile"),
         headers: {"Authorization": "Bearer $token"},
       );
 
@@ -102,7 +103,7 @@ class _AccountPageState extends State<AccountPage> {
       if (editMobile) body['mobile'] = mobileController.text.trim();
 
       final response = await http.put(
-        Uri.parse("https://nextup-backend-zlou.onrender.com/api/profile"),
+        Uri.parse("http://192.168.1.34:8080/api/profile"),
         headers: {
           "Content-Type": "application/json",
           "Authorization": "Bearer $token",
@@ -326,6 +327,17 @@ class _AccountPageState extends State<AccountPage> {
                     decoration: _cardDecoration(),
                     child: Column(
                       children: [
+                        _actionTile(
+                          icon: Icons.receipt_long_outlined,
+                          label: "Payments",
+                          iconColor: const Color(0xFF059669),
+                          iconBg: const Color(0xFFECFDF5),
+                          onTap: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(builder: (_) => const PaymentsPage()),
+                          ),
+                        ),
+                        _divider(),
                         _actionTile(
                           icon: Icons.feedback_outlined,
                           label: "Send Feedback",

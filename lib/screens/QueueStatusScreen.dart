@@ -100,7 +100,7 @@ class _QueueStatusScreenState extends State<QueueStatusScreen>
     final headers = await ApiService.getAuthHeaders();
 
     final url = Uri.parse(
-        "https://nextup-backend-zlou.onrender.com/api/user/cancel/${widget.queueEntryId}?userId=${widget.userId}");
+        "http://192.168.1.34:8080/api/user/cancel/${widget.queueEntryId}?userId=${widget.userId}");
 
     final response = await http.delete(url,
     headers: headers);
@@ -147,7 +147,7 @@ class _QueueStatusScreenState extends State<QueueStatusScreen>
 
 
       final url = Uri.parse(
-        "https://nextup-backend-zlou.onrender.com/api/provider/${widget.serviceId}",
+        "http://192.168.1.34:8080/api/provider/${widget.serviceId}",
       );
 
       final headers = await ApiService.getAuthHeaders();

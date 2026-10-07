@@ -8,7 +8,7 @@ import '../models/service_model.dart';
 
 class ServiceApi {
 
-  static const String baseUrl = "https://nextup-backend-zlou.onrender.com/api/provider";
+  static const String baseUrl = "http://192.168.1.34:8080/api/provider";
 
   static Future<List<ServiceModel>> getServices(
       int providerId,

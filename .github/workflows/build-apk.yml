@@ -1,0 +1,35 @@
+name: Build NextUp APK
+
+# Builds a release APK in the cloud (free on GitHub Actions) — no local Android setup needed.
+# Run it: GitHub repo -> Actions -> "Build NextUp APK" -> Run workflow, then download the
+# "nextup-apk" artifact from the finished run.
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, master]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - run: flutter --version
+      - run: flutter pub get
+      - run: flutter build apk --release
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nextup-apk
+          path: build/app/outputs/flutter-apk/app-release.apk

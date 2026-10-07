@@ -87,7 +87,7 @@ class _QueueScreenState extends State<QueueScreen> with TickerProviderStateMixin
   DateTime? _servingStartTime;
   int?      _trackedTokenNumber;
 
-  final String baseUrl = "https://nextup-backend-zlou.onrender.com/api";
+  final String baseUrl = "http://192.168.1.34:8080/api";
 
   // ── Timer display ─────────────────────────────────────────────────────
   String _getLiveTime() {

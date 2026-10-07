@@ -821,6 +821,17 @@ class _ServiceProviderHomePageState extends State<ServiceProviderHomePage>
                               ),
                             ],
                           ),
+                          if (service.fee > 0) ...[
+                            const SizedBox(height: 5),
+                            Text(
+                              "Fee: ₹${service.fee.toStringAsFixed(service.fee % 1 == 0 ? 0 : 2)}",
+                              style: const TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: _blue,
+                              ),
+                            ),
+                          ],
                         ],
                       ),
                     ),
@@ -901,6 +912,7 @@ class _ServiceProviderHomePageState extends State<ServiceProviderHomePage>
     final nameController        = TextEditingController();
     final descriptionController = TextEditingController();
     final capacityController    = TextEditingController();
+    final feeController         = TextEditingController();
     bool isSaving = false;
 
     showDialog(
@@ -943,6 +955,24 @@ class _ServiceProviderHomePageState extends State<ServiceProviderHomePage>
               }
             }
 
+            double? fee;
+            if (feeController.text.trim().isNotEmpty) {
+              fee = double.tryParse(feeController.text.trim());
+              if (fee == null || fee < 0 || (fee > 0 && fee < 1) || fee > 100000) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: const Text("Enter a fee of 0 (free) or at least ₹1"),
+                    backgroundColor: _red,
+                    behavior: SnackBarBehavior.floating,
+                    margin: const EdgeInsets.all(16),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12)),
+                  ),
+                );
+                return;
+              }
+            }
+
             setStateDialog(() => isSaving = true);
             final prefs = await SharedPreferences.getInstance();
 
@@ -958,6 +988,7 @@ class _ServiceProviderHomePageState extends State<ServiceProviderHomePage>
                 "name":        name,
                 "description": description,
                 if (maxCapacity != null) "maxCapacity": maxCapacity,
+                if (fee != null) "fee": fee,
               },
               token);
               if (!mounted) return;
@@ -1079,6 +1110,14 @@ class _ServiceProviderHomePageState extends State<ServiceProviderHomePage>
                         hint: "Leave empty for unlimited",
                         controller: capacityController,
                         keyboardType: TextInputType.number,
+                        isOptional: true,
+                      ),
+                      const SizedBox(height: 16),
+                      _premiumInputField(
+                        label: "Queue Fee (₹)",
+                        hint: "Leave empty for a free service",
+                        controller: feeController,
+                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
                         isOptional: true,
                       ),
 

@@ -4,7 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 class ApiService {
   // ⚙️ Replace with your backend IP and port
-  static const String baseUrl = "https://nextup-backend-zlou.onrender.com";
+  static const String baseUrl = "http://192.168.1.34:8080";
 
   /// ✅ Generic POST request for reusability
   static Future<Map<String, dynamic>> postRequest(

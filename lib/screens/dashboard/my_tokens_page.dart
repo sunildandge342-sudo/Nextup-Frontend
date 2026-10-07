@@ -21,7 +21,7 @@ class _MyTokensPageState extends State<MyTokensPage> {
   bool isLoading = true;
   Timer? _timer;
 
-  final String baseUrl = "https://nextup-backend-zlou.onrender.com";
+  final String baseUrl = "http://192.168.1.34:8080";
 
   @override
   void initState() {

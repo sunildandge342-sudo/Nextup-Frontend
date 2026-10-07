@@ -1,21 +1,25 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:http/http.dart' as http;
+import 'package:nextup/models/payment_model.dart';
 import 'package:nextup/screens/QueueStatusScreen.dart';
-import 'dart:convert';
-import 'package:flutter/material.dart';
-import 'package:mobile_scanner/mobile_scanner.dart';
-import 'package:http/http.dart' as http;
-
-import 'dart:convert';
-import 'package:flutter/material.dart';
-import 'package:mobile_scanner/mobile_scanner.dart';
-import 'package:http/http.dart' as http;
 import 'package:nextup/services/api_services.dart';
+import 'package:nextup/services/payment_api.dart';
+import 'package:nextup/services/razorpay_checkout.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+enum PaymentMethod {
+  cash,
+  online,
+  cancel,
+}
+
 class ScanQRScreen extends StatefulWidget {
   final int userId;
+
+
 
   const ScanQRScreen({super.key, required this.userId});
 
@@ -27,9 +31,11 @@ class _ScanQRScreenState extends State<ScanQRScreen> {
   bool _isProcessing = false;
   String? _lastScannedCode;
 
+
+
   final MobileScannerController _controller = MobileScannerController();
 
-  final String baseUrl = "https://nextup-backend-zlou.onrender.com";
+  final String baseUrl = "http://192.168.1.34:8080";
 
   Future<void> _joinQueue(String scannedValue) async {
     if (_isProcessing) return;
@@ -47,57 +53,313 @@ class _ScanQRScreenState extends State<ScanQRScreen> {
     setState(() => _isProcessing = true);
     _controller.stop();
 
-
     try {
-      // ✅ Correct endpoint
-      final response = await http.post(
-        Uri.parse("$baseUrl/api/user/token/join"),
-        headers: await ApiService.getAuthHeaders(),
-        body: jsonEncode({
-          "userId": widget.userId,
-          "serviceId": serviceId,
-        }),
-      );
-
+      // 1. Ask the server whether this service charges a fee.
+      final order = await PaymentApi.createOrder(serviceId);
       if (!mounted) return;
 
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
+      Map<String, dynamic> data = {};
 
-        print("API RESPONSE: $data");
+      if (order.paymentRequired) {
+        // Show Cash / Online selection
+        final method = await _selectPaymentMethod(order);
 
-        // ✅ ADD THIS — save avgWaitTime before navigating
-        final prefs = await SharedPreferences.getInstance();
-        final avgWait = (data["averageWaitingTimeMinutes"] as num?)?.toInt() ?? 0;
-        await prefs.setInt('avgWaitTime', avgWait);
-        debugPrint("💾 Saved avgWaitTime: $avgWait");
+        if (!mounted) return;
 
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(
-            builder: (_) => QueueStatusScreen(
-              serviceId: serviceId,
-              serviceName: data["serviceName"] ?? "Service",
-              tokenNumber: int.tryParse("${data["tokenNumber"]}") ?? 0,
-              position: int.tryParse("${data["position"]}") ?? 0,
-              estimatedTime: avgWait, // ✅ reuse avgWait directly
-              status: data["status"] ?? "WAITING",
-              queueEntryId: int.tryParse("${data["queueEntryId"]}") ?? 0,
-              userId: int.tryParse("${data["userId"]}") ?? 0,
+        // User cancelled
+        if (method == PaymentMethod.cancel) {
+          await _resetScanner();
+          return;
+        }
+
+        // =========================
+        // CASH PAYMENT
+        // =========================
+        // =========================
+// CASH PAYMENT
+// =========================
+        if (method == PaymentMethod.cash) {
+
+          final response = await http
+              .post(
+            Uri.parse("$baseUrl/api/user/payment/cash"),
+            headers: await ApiService.getAuthHeaders(),
+            body: jsonEncode({
+              "serviceId": serviceId,
+            }),
+          )
+              .timeout(const Duration(seconds: 60));
+
+          debugPrint("💵 CASH STATUS: ${response.statusCode}");
+          debugPrint("💵 CASH BODY: ${response.body}");
+
+          if (response.statusCode != 200) {
+            throw PaymentApiException(
+              response.statusCode,
+              response.body.isNotEmpty
+                  ? response.body
+                  : "Cash payment failed",
+            );
+          }
+
+          data = jsonDecode(response.body) as Map<String, dynamic>;
+        }
+
+        // =========================
+        // ONLINE PAYMENT
+        // =========================
+        else if (method == PaymentMethod.online) {
+          final result = await RazorpayCheckout.open(
+            await _checkoutOptions(order),
+          );
+
+          if (!mounted) return;
+
+          // Payment cancelled / failed
+          if (!result.success ||
+              result.orderId == null ||
+              result.paymentId == null ||
+              result.signature == null) {
+
+            if (order.orderId != null) {
+              await PaymentApi.reportFailure(
+                order.orderId!,
+                result.message ?? "Payment failed",
+              );
+            }
+
+            _showSnackBar(
+              result.cancelled
+                  ? "Payment cancelled. You have not joined the queue."
+                  : (result.message ?? "Payment failed. Please try again."),
+            );
+
+            await _resetScanner();
+            return;
+          }
+
+          // Payment successful → verify → get token
+          data = await _verifyWithRetry(result);
+        }
+      } else {
+        // 2b. Free service: join directly, exactly as before.
+        final response = await http
+            .post(
+          Uri.parse("$baseUrl/api/user/payment/cash"),
+          headers: await ApiService.getAuthHeaders(),
+          body: jsonEncode({
+            "serviceId": serviceId,
+          }),
+        )
+            .timeout(const Duration(seconds: 60));
+
+        if (response.statusCode != 200) {
+          throw PaymentApiException(
+              response.statusCode,
+              response.body.isNotEmpty ? response.body : "Failed to join queue");
+        }
+        data = jsonDecode(response.body) as Map<String, dynamic>;
+      }
+
+      if (!mounted) return;
+      await _openQueueStatus(data, serviceId);
+    } on PaymentApiException catch (e) {
+      if (!mounted) return;
+      _showSnackBar(e.message);
+      await _resetScanner();
+    } catch (e) {
+      if (!mounted) return;
+      _showSnackBar("Server connection failed");
+      await _resetScanner();
+    }
+  }
+
+  /// Verification is idempotent on the server, so it is safe to retry after a network blip.
+  /// The customer has already paid at this point, so we try hard before giving up.
+  Future<Map<String, dynamic>> _verifyWithRetry(CheckoutResult result) async {
+    Object? lastError;
+    for (var attempt = 0; attempt < 4; attempt++) {
+      try {
+        return await PaymentApi.verify(
+          orderId: result.orderId!,
+          paymentId: result.paymentId!,
+          signature: result.signature!,
+        );
+      } on PaymentApiException {
+        rethrow; // the server answered: retrying will not change it
+      } catch (e) {
+        lastError = e; // network problem: wait and try again
+        await Future.delayed(const Duration(seconds: 3));
+      }
+    }
+    throw PaymentApiException(
+      0,
+      "Payment received (ref ${result.paymentId}) but we could not confirm it. "
+          "Check My Tokens in a moment or contact the service provider. ($lastError)",
+    );
+  }
+
+  Future<Map<String, dynamic>> _checkoutOptions(PaymentOrder order) async {
+    final prefs = await SharedPreferences.getInstance();
+    final email = prefs.getString('email') ?? prefs.getString('userEmail');
+    final phone = prefs.getString('phone') ?? prefs.getString('userPhone');
+
+    return {
+      'key': order.keyId,
+      'amount': order.amountPaise,
+      'currency': order.currency,
+      'order_id': order.orderId,
+      'name': 'NextUp',
+      'description': order.serviceName,
+      'timeout': 300, // seconds
+      'theme': {'color': '#2563EB'},
+      if ((email != null && email.isNotEmpty) || (phone != null && phone.isNotEmpty))
+        'prefill': {
+          if (email != null && email.isNotEmpty) 'email': email,
+          if (phone != null && phone.isNotEmpty) 'contact': phone,
+        },
+    };
+  }
+
+  Future<PaymentMethod> _selectPaymentMethod(PaymentOrder order) async {
+    final result = await showModalBottomSheet<PaymentMethod>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        return Container(
+          padding: const EdgeInsets.fromLTRB(20, 20, 20, 24),
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(
+              top: Radius.circular(28),
             ),
           ),
-        );
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Handle
+              Container(
+                width: 42,
+                height: 5,
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade300,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+              ),
 
-      } else {
-        _showSnackBar("Failed to join queue");
-        _controller.start();
-        setState(() => _isProcessing = false);
-      }
-    } catch (e) {
-      _showSnackBar("Server connection failed");
-      _controller.start();
-      setState(() => _isProcessing = false);
-    }
+              const SizedBox(height: 20),
+
+              const Text(
+                "Choose Payment Method",
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+
+              const SizedBox(height: 8),
+
+              Text(
+                order.serviceName,
+                style: TextStyle(
+                  fontSize: 14,
+                  color: Colors.grey.shade600,
+                ),
+              ),
+
+              const SizedBox(height: 6),
+
+              Text(
+                "₹${order.amount.toStringAsFixed(2)}",
+                style: const TextStyle(
+                  fontSize: 28,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+
+              const SizedBox(height: 24),
+
+              // Cash
+              _paymentOption(
+                context: ctx,
+                icon: Icons.payments_outlined,
+                title: "Pay Cash",
+                subtitle: "Pay at the service counter",
+                onTap: () {
+                  Navigator.pop(ctx, PaymentMethod.cash);
+                },
+              ),
+
+              const SizedBox(height: 12),
+
+              // Online
+              _paymentOption(
+                context: ctx,
+                icon: Icons.credit_card_outlined,
+                title: "Pay Online",
+                subtitle: "UPI, Card, Net Banking & more",
+                onTap: () {
+                  Navigator.pop(ctx, PaymentMethod.online);
+                },
+              ),
+
+              const SizedBox(height: 12),
+
+              TextButton(
+                onPressed: () {
+                  Navigator.pop(ctx, PaymentMethod.cancel);
+                },
+                child: const Text(
+                  "Cancel",
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+
+    return result ?? PaymentMethod.cancel;
+  }
+
+  Future<void> _resetScanner() async {
+    _lastScannedCode = null; // allow scanning the same QR again
+    if (mounted) setState(() => _isProcessing = false);
+    try {
+      await _controller.start();
+    } catch (_) {}
+  }
+
+  Future<void> _openQueueStatus(Map<String, dynamic> data, int serviceId) async {
+    print("API RESPONSE: $data");
+
+    // save avgWaitTime before navigating
+    final prefs = await SharedPreferences.getInstance();
+    final avgWait = (data["averageWaitingTimeMinutes"] as num?)?.toInt() ?? 0;
+    await prefs.setInt('avgWaitTime', avgWait);
+    debugPrint("💾 Saved avgWaitTime: $avgWait");
+
+    if (!mounted) return;
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(
+        builder: (_) => QueueStatusScreen(
+          serviceId: serviceId,
+          serviceName: data["serviceName"] ?? "Service",
+          tokenNumber: int.tryParse("${data["tokenNumber"]}") ?? 0,
+          position: int.tryParse("${data["position"]}") ?? 0,
+          estimatedTime: avgWait,
+          status: data["status"] ?? "WAITING",
+          queueEntryId: int.tryParse("${data["queueEntryId"]}") ?? 0,
+          userId: int.tryParse("${data["userId"]}") ?? 0,
+        ),
+      ),
+    );
   }
 
   void _showSnackBar(String message) {
@@ -117,6 +379,75 @@ class _ScanQRScreenState extends State<ScanQRScreen> {
   void dispose() {
     _controller.dispose();
     super.dispose();
+  }
+
+
+  Widget _paymentOption({
+    required BuildContext context,
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(16),
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          border: Border.all(color: Colors.grey.shade200),
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                color: const Color(0xFFF3F6FF),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Icon(
+                icon,
+                color: const Color(0xFF2563EB),
+                size: 25,
+              ),
+            ),
+
+            const SizedBox(width: 14),
+
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    subtitle,
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: Colors.grey.shade600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            const Icon(
+              Icons.arrow_forward_ios_rounded,
+              size: 16,
+              color: Colors.grey,
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   @override

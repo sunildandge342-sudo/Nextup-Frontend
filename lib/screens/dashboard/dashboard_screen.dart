@@ -39,7 +39,7 @@ class _UserDashboardState extends State<UserDashboard> {
       if (token == null) return;
 
       final response = await http.get(
-        Uri.parse("https://nextup-backend-zlou.onrender.com/api/profile"),
+        Uri.parse("http://192.168.1.34:8080/api/profile"),
         headers: {"Authorization": "Bearer $token"},
       );
 
